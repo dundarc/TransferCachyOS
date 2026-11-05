@@ -1,125 +1,71 @@
 # TransferCachyOS
 
-CachyOS’a yeni geçenler için uygulama seçme ve kurma aracı.
+TransferCachyOS helps people set up and maintain a CachyOS desktop, with a
+getting-started guide for users moving from Windows. The interface is available
+in English, Turkish, French, and German.
 
-## Kademe 1
+> **Beta — development is ongoing.** Use this application with caution. Review
+> each operation before confirming package installations, package removals, or
+> hardware setting changes. Back up important files before making system changes.
 
-- Türkçe, İngilizce, Fransızca ve Almanca arayüz. Dil tercihi sonraki açılış için saklanır.
-- Günlük kullanım, ofis ve okul, kodlama profilleri.
-- Kurulu paketleri algılama, eksikleri önizleme, toplu kurulum ve işlem çıktısı.
-- İşlem sonrasında paketleri tekrar tarama. Eksik kalan paketler aynı seçimden yeniden denenebilir.
+## Install
 
-## Kademe 2
-
-- **Sistem** sekmesi üretici ve modeli, erişilebilir fan devirlerini ve donanım
-  profilini gösterir. Sistem hizmeti erişilebilirse güç profili değiştirilebilir.
-  Özel fan eğrileri için model ve sürücü bazında doğrulama gerekir.
-- **Paketler** sekmesi kurulu pacman paketlerini ve sürümlerini aratır. Açıkça
-  kurulmuş ve uygulamanın koruma listesi dışında kalan paketler, önizleme ve
-  onaydan sonra tek tek kaldırılabilir. Pacman bağımlılık kontrolünü yapar.
-
-## Kademe 3
-
-- **Başlangıç** sekmesi klavye, varsayılan tarayıcı, PDF okuyucu, yazıcı, güncelleme
-  ve yedekleme bilgilerini gösterir. Güncelleme sayısı yerel paket listesine
-  dayanır. Yedek hedefi ve son yedekleme durumu bu ekranda doğrulanmaz.
-- **Flathub** sekmesi seçilmiş uygulamaları önizleme ve onayla yükler. Var olan
-  etkin Flathub kaynağını kullanır ve kurulum kapsamını gösterir. Hem kullanıcı
-  hem sistem kaynağı varsa kullanıcı kaynağı seçilir. Kurulu uygulamalar
-  **Aç** düğmesiyle başlatılabilir.
-
-## Kademe 4
-
-- **Windows’tan geçiş** sekmesi Office dosyaları, OneDrive dosyaları ve cihazlar
-  arası aktarım için başlangıç adımlarını gösterir.
-- **Yedekleme** sekmesi Restic ile seçilen klasörleri şifreli yerel depoya
-  yedekler. Hedef boş bir klasör veya mevcut Restic deposu olabilir. Parola
-  Restic’e işlem sırasında aktarılır ve uygulama ayarlarına kaydedilmez.
-  Eksik yedekler ayrı durumla gösterilir.
-
-## Kademe 5
-
-- Mevcut depoyu seçip parolayı girerek yedekleri tarih, kimlik ve kaynak
-  klasörleriyle listeleyebilirsin.
-- Bir yedeği seçip parolayı yeniden girerek tüm dosyalarını depodan ayrı,
-  boş bir klasöre geri yükleyebilirsin.
-- Son 30 yedekleme ve geri yükleme sonucu yerel geçmişte tutulur. Geçmişe
-  parola, klasör yolu veya işlem çıktısı yazılmaz.
-
-## Kademe 6
-
-- **Sistem** sekmesi açıkken pil seviyesi, şarj durumu, adaptör ve fan devri
-  iki saniyede bir yenilenir. Güç hizmeti destekliyorsa pil ve adaptör
-  olaylarına göre güç ayarlarını uyarlama seçeneği de açılır.
-- Şarj üst sınırı sunan ASUS pillerde %60–100 aralığı seçilebilir.
-  Değişiklik onay ve yönetici yetkisi gerektirir. Başlangıçta yeniden
-  uygulama yapılmaz. KDE güç ayarlarından uyku ve ekran davranışları açılabilir.
-
-## Kademe 7
-
-1. **Bugün** ekranı pil, boş alan, güç profili, İndirilenler ve LocalSend
-   kısayollarını bir araya getirir.
-2. Son başarılı yedek ve son yedekleme sorunu görünür. Kullanıcı izin verirse
-   başarılı yedeğin kaynakları ve hedefi hatırlanır. Hedef yeniden
-   erişilebilir olduğunda yedek ekranı önceden doldurulabilir.
-3. **Disk alanı** seçilen klasörde beş seviye derinliğe kadar 100 MiB üzeri
-   dosyaları arar ve en büyük 100 sonucu gösterir. Dosyalar ayrı onayla
-   Çöp Kutusu’na taşınır. Paket önbelleği dosya yöneticisinde açılır.
-4. **Güncellemeler ve favoriler** sistem paketlerini ve kullanıcı/sistem
-   Flatpak güncellemelerini ayrı sorgular. Favoriler Bugün ekranından açılır.
-5. **Dizüstü** pil ve priz profillerini uygulama açıkken uygular. Bu ayar,
-   güç hizmetinin kendi otomatik uyarlaması kapalıyken kullanılabilir.
-   Desteklenen ASUS pillerde seyahat modu eski sınırı aynı açılış oturumunda
-   sekiz saat sonra geri yüklemeyi planlar. Yeniden başlatma zamanlayıcıyı siler.
-6. **Aygıtlar** Bluetooth, ses, ekran, ağ ve yazıcı ayarlarına erişim sağlar.
-   KDE Plasma, GNOME, Xfce ve Cinnamon oturumlarında ilgili masaüstü
-   araçları kullanılır. Uygun olduğunda kurulu bağımsız araçlar devreye
-   girer. Araç bulunamadığında durum ekranda belirtilir.
-
-## Arayüz
-
-Ana gezinme beş bölümden oluşur: **Bugün**, **Uygulamalar**, **Sistem**,
-**Yedekleme** ve **Rehber**. Dil seçimi pencerenin sağ üstündedir.
-Yedekleme ekranında yeni yedek ve geri yükleme ayrı sekmelerdedir.
-**Uygulamalar → Yüklü uygulamalar** doğrudan kurulan masaüstü uygulamalarını ve
-Flatpak'leri adları, sürümleri ve kaynaklarıyla gösterir. Teknik sistem paketleri ayrı
-görünümde açılabilir. Kaldırma işlemi bir öğeyle sınırlıdır ve onay ister.
-
-## Sisteme kurma
-
-Masaüstündeki TransferCachyOS klasöründe:
+From the project directory on CachyOS:
 
 ```bash
 sudo ./install.sh
 ```
 
-Kurulumdan sonra KDE uygulama menüsünden **TransferCachyOS**’u aç veya
-`transfercachyos` komutunu çalıştır. Betik dosyaları `/usr/local` altına kopyalar.
-Kaynak kodu değiştirdikten sonra kurulu kopyayı güncellemek için aynı komutu yeniden
-çalıştır.
+Open **TransferCachyOS** from your desktop's application menu or run
+`transfercachyos`. The installer copies the application to `/usr/local`.
+Run it again to update the installed copy after changing the source.
 
-## Kaynak koddan çalıştırma
+The application uses the system Python and PySide6. If PySide6 is missing:
 
-CachyOS masaüstü oturumunda, bu klasörün içinde:
+```bash
+sudo pacman -Syu --needed pyside6
+```
+
+To run directly from the source directory:
 
 ```bash
 /usr/bin/python3 main.py
 ```
 
-Uygulama sistem Python’u ve PySide6 kullanır. PySide6 eksikse CachyOS’ta
-`sudo pacman -Syu --needed pyside6` komutuyla kurulabilir. Kurulum için çalışan bir
-Polkit doğrulama arayüzü gerekir. Uygulama normal kullanıcı olarak açılır ve paket
-işlemi için `pkexec` üzerinden yetki ister.
+Run the application as your normal user. System package operations and
+supported charge limit changes request administrator authorization through
+Polkit. A desktop Polkit authentication agent is required for those prompts.
 
-## Kurulum davranışı
+## Features
 
-Plan ekranı seçilen uygulamaların eksik paketlerini listeler. Pacman bağımlılıkları
-çözer ve paketlerle birlikte sistemin tamamını günceller. Pacman’ın varsayılan
-yanıtları kullanılır. Kurulum sırasında pencere açık kalır.
+| Section | What you can do |
+| --- | --- |
+| **Today** | See battery status, free disk space, and the last successful backup. Open Downloads, favorites, or LocalSend when available. |
+| **Apps** | Select apps by profile, review installation plans, install selected Flathub apps, and manage installed apps by name. Turn on **Show technical packages** to see the full pacman package list. Check system and Flatpak updates separately. |
+| **System** | Monitor battery, charger, and reported fan speed. Select available power profiles, find large files, and open device settings. |
+| **Backup** | Back up selected folders to an encrypted local Restic repository, list snapshots, and restore a snapshot to a separate empty folder. Review the last 30 backup and restore results. |
+| **Guide** | Check keyboard layout, default apps, and printer availability. Find starting points for Office files, OneDrive files, and file transfers. |
 
-Dört dil desteği TransferCachyOS
-arayüzü içindir. Kurulan uygulamalar kendi dil ayarlarını kullanır.
+## How system changes work
 
-## Sonraki kademe
-
-İsteğe bağlı otomatik yedekleme zamanlaması.
+- **System packages.** Installing selected pacman packages also refreshes the
+  package databases and upgrades the system. Pacman resolves dependencies and
+  uses its default answers. Removal targets one selected item and is subject to
+  pacman's dependency checks and the app's protection rules.
+- **Flatpak.** Installation uses an existing enabled Flathub remote. The
+  confirmation shows the installation scope. If both user and system remotes
+  are available, new installations use the user remote.
+- **Power and hardware.** Available power profiles depend on the system's power
+  profile service. Fan speeds are read from available sensors. Custom fan
+  curves are outside the current feature set. Supported ASUS batteries can
+  use a charge limit from 60% to 100%. Travel mode schedules the previous limit
+  to return after eight hours in the same boot. Restarting clears its timer.
+- **Desktop settings.** Shortcuts support KDE Plasma, GNOME, Xfce, and
+  Cinnamon. Other sessions can use compatible standalone tools when installed.
+- **Backups.** Restic is required. Keep the repository password somewhere safe.
+  TransferCachyOS does not save it. Backup paths are remembered only when you
+  enable that preference. History stores the operation time and result.
+  Backups are started manually.
+- **Disk cleanup.** The large-file scan shows up to 100 results. After
+  confirmation, the selected file moves to Trash. Disk space is reclaimed
+  when Trash is emptied.
