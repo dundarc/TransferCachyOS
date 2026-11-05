@@ -1,0 +1,2 @@
+#!/usr/bin/bash
+exec /usr/bin/python3 -E -s -B /usr/local/lib/transfercachyos/main.py "$@"

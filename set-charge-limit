@@ -1,0 +1,61 @@
+#!/usr/bin/bash
+set -euo pipefail
+export LC_ALL=C
+
+valid_limit() {
+    [[ "$1" =~ ^(6[0-9]|7[0-9]|8[0-9]|9[0-9]|100)$ ]]
+}
+
+if [[ $# -lt 2 || $# -gt 3 || ! "$1" =~ ^BAT[0-9]+$ ]] ||
+   { ! valid_limit "$2" && [[ "$2" != travel ]]; } ||
+   { [[ $# -eq 3 ]] && { [[ "$3" != revert-travel ]] || ! valid_limit "$2"; }; }; then
+    printf '%s\n' 'Expected a BAT device and a charge limit from 60 to 100, or travel.' >&2
+    exit 2
+fi
+
+vendor=$(< /sys/class/dmi/id/sys_vendor)
+if [[ "${vendor,,}" != asustek* ]]; then
+    printf '%s\n' 'This charge-limit controller supports ASUS systems.' >&2
+    exit 1
+fi
+
+battery="/sys/class/power_supply/$1"
+threshold="$battery/charge_control_end_threshold"
+if [[ ! -r "$battery/type" || ! -w "$threshold" ]] || [[ "$(< "$battery/type")" != Battery ]]; then
+    printf '%s\n' 'This battery does not expose a writable charge limit.' >&2
+    exit 1
+fi
+
+write_limit() {
+    printf '%s\n' "$1" > "$threshold" && [[ "$(< "$threshold")" == "$1" ]]
+}
+
+unit="transfercachyos-travel-$1"
+exec 9>"/run/$unit.lock"
+/usr/bin/flock -x 9
+if [[ "${3:-}" == revert-travel ]]; then
+    if [[ "$(< "$threshold")" == 100 ]]; then
+        write_limit "$2"
+    fi
+elif [[ "$2" == travel ]]; then
+    previous=$(< "$threshold")
+    if ! valid_limit "$previous" || [[ "$previous" == 100 ]]; then
+        printf '%s\n' 'Travel mode requires an existing charge limit between 60 and 99.' >&2
+        exit 1
+    fi
+    /usr/bin/systemd-run --quiet --unit="$unit" --on-active=8h --timer-property=AccuracySec=1min \
+        -- /usr/local/lib/transfercachyos/set-charge-limit "$1" "$previous" revert-travel
+    if ! write_limit 100; then
+        /usr/bin/systemctl stop "$unit.timer"
+        printf '%s\n' 'The battery did not accept the travel charge limit.' >&2
+        exit 1
+    fi
+else
+    if ! write_limit "$2"; then
+        printf '%s\n' 'The battery driver did not report the requested charge limit.' >&2
+        exit 1
+    fi
+    if /usr/bin/systemctl --quiet is-active "$unit.timer"; then
+        /usr/bin/systemctl stop "$unit.timer"
+    fi
+fi

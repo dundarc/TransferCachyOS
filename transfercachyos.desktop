@@ -1,0 +1,13 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=TransferCachyOS
+Comment=Set up essential apps on CachyOS
+Comment[tr]=CachyOS için temel uygulamaları kur
+Comment[fr]=Installez les applications essentielles sur CachyOS
+Comment[de]=Wichtige Anwendungen auf CachyOS einrichten
+Exec=/usr/local/bin/transfercachyos
+TryExec=/usr/local/bin/transfercachyos
+Icon=system-software-install
+Terminal=false
+Categories=System;
