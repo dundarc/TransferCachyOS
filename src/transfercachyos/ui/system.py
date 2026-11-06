@@ -9,156 +9,28 @@ from PySide6.QtWidgets import (
     QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from catalog import LANGUAGES
-from desktop_settings import open_settings, settings_command
+from ..i18n import translator
+from ..services.commands import command, error_text
+from ..services.desktop import open_settings, settings_command
+from ..services.packages import PKEXEC
+from ..services.power import CHARGE_HELPER, FIRMWARE, POWER, fan_speeds, power_snapshot, power_supplies, read_text
 
-PACMAN = "/usr/bin/pacman"
-PKEXEC = "/usr/bin/pkexec"
-POWER = "/usr/bin/powerprofilesctl"
-FIRMWARE = Path("/sys/firmware/acpi")
-POWER_SUPPLIES = Path("/sys/class/power_supply")
-CHARGE_HELPER = "/usr/local/lib/transfercachyos/set-charge-limit"
-PROTECTED = frozenset({
-    "base", "filesystem", "glibc", "systemd", "systemd-sysvcompat", "pacman",
-    "bash", "sudo", "polkit", "python", "pyside6", "networkmanager", "grub",
-    "plasma-desktop", "plasma-workspace", "sddm",
-})
+from .read_task import ReadTask
 
-WORDS = {
-    "apps": ("Uygulamalar", "Apps", "Applications", "Anwendungen"),
-    "system": ("Sistem", "System", "Système", "System"),
-    "packages": ("Paketler", "Packages", "Paquets", "Pakete"),
-    "refresh": ("Yenile", "Refresh", "Actualiser", "Aktualisieren"),
-    "device": ("Cihaz", "Device", "Appareil", "Gerät"),
-    "firmware": ("Donanım profili", "Firmware profile", "Profil matériel", "Firmware-Profil"),
-    "fan": ("Fan hızı", "Fan speed", "Vitesse du ventilateur", "Lüfterdrehzahl"),
-    "no_fan": ("Fan sensörü görünmüyor.", "No fan sensor detected.",
-               "Aucun capteur de ventilateur détecté.", "Kein Lüftersensor erkannt."),
-    "fan_note": ("Fan hızları izlenebilir. Özel fan eğrisi denetimi bu sürümde mevcut değil.",
-                 "Fan speeds can be monitored. Custom fan curve control is unavailable in this version.",
-                 "Les vitesses peuvent être surveillées. Le réglage des courbes de ventilation est indisponible dans cette version.",
-                 "Lüfterdrehzahlen sind ablesbar. Eigene Lüfterkurven sind in dieser Version nicht verfügbar."),
-    "power": ("Güç profili", "Power profile", "Profil d’alimentation", "Energieprofil"),
-    "power-saver": ("Güç tasarrufu", "Power saver", "Économie d’énergie", "Energiesparmodus"),
-    "balanced": ("Dengeli", "Balanced", "Équilibré", "Ausgeglichen"),
-    "performance": ("Performans", "Performance", "Performances", "Leistung"),
-    "power_off": ("Güç profili hizmetine erişilemiyor.",
-                  "The power profile service is unavailable.",
-                  "Le service de profils d’alimentation est indisponible.",
-                  "Der Energieprofildienst ist nicht verfügbar."),
-    "apply": ("Uygula", "Apply", "Appliquer", "Anwenden"),
-    "battery": ("Pil", "Battery", "Batterie", "Akku"),
-    "no_battery": ("Pil algılanmadı.", "No battery detected.", "Aucune batterie détectée.", "Kein Akku erkannt."),
-    "charging": ("Şarj oluyor", "Charging", "En charge", "Wird geladen"),
-    "discharging": ("Pille çalışıyor", "Discharging", "En décharge", "Wird entladen"),
-    "not_charging": ("Şarj olmuyor", "Not charging", "Ne charge pas", "Wird nicht geladen"),
-    "full": ("Dolu", "Full", "Pleine", "Voll"),
-    "power_source": ("Güç kaynağı", "Power source", "Source d’alimentation", "Stromquelle"),
-    "adapter": ("Adaptör bağlı", "Adapter connected", "Adaptateur branché", "Netzteil angeschlossen"),
-    "battery_power": ("Adaptör bağlı değil", "Adapter disconnected", "Adaptateur débranché", "Netzteil getrennt"),
-    "charge_limit": ("Şarj üst sınırı", "Charge limit", "Limite de charge", "Ladegrenze"),
-    "limit_hint": ("Desteklenen ASUS cihazlarda %60–100. %100 tam şarja izin verir. Sistem bu ayarı yeniden başlatınca değiştirebilir.",
-                   "60–100% on supported ASUS devices. 100% allows a full charge. The system may reset this setting after reboot.",
-                   "60–100 % sur les appareils ASUS compatibles. 100 % autorise une charge complète. Le système peut réinitialiser ce réglage au redémarrage.",
-                   "60–100 % auf unterstützten ASUS-Geräten. 100 % erlaubt eine volle Ladung. Das System kann die Einstellung beim Neustart zurücksetzen."),
-    "limit_unsupported": ("Bu cihazda TransferCachyOS üzerinden şarj sınırı değiştirilemiyor.",
-                          "TransferCachyOS cannot change the charge limit on this device.",
-                          "TransferCachyOS ne peut pas modifier la limite de charge sur cet appareil.",
-                          "TransferCachyOS kann die Ladegrenze auf diesem Gerät nicht ändern."),
-    "limit_install": ("Şarj sınırını değiştirmek için install.sh ile kurulu kopyayı güncelle.",
-                      "Update the installed copy with install.sh to change the charge limit.",
-                      "Mettez à jour la copie installée avec install.sh pour modifier la limite de charge.",
-                      "Aktualisiere die installierte Kopie mit install.sh, um die Ladegrenze zu ändern."),
-    "limit_changed": ("Şarj sınırı güncellendi.", "Charge limit updated.", "Limite de charge mise à jour.", "Ladegrenze aktualisiert."),
-    "limit_confirm": ("Bu pil için şarj üst sınırı değiştirilsin mi?",
-                      "Change the charge limit for this battery?",
-                      "Modifier la limite de charge de cette batterie ?",
-                      "Ladegrenze für diesen Akku ändern?"),
-    "auto_power": ("Pil ve adaptör durumuna göre güç ayarlarını uyarla",
-                   "Adapt power settings to battery and charger events",
-                   "Adapter la gestion de l’énergie à la batterie et au chargeur",
-                   "Energieeinstellungen an Akku und Netzteil anpassen"),
-    "power_settings": ("Masaüstü güç ayarları", "Desktop power settings", "Gestion de l’énergie du bureau", "Energieeinstellungen des Desktops"),
-    "search": ("Paket adı veya sürümü ara", "Search by package name or version",
-               "Rechercher un nom ou une version", "Paketname oder Version suchen"),
-    "remove": ("Paketi kaldır", "Remove package", "Supprimer le paquet", "Paket entfernen"),
-    "cancel": ("Vazgeç", "Cancel", "Annuler", "Abbrechen"),
-    "remove_plan": (
-        "Şu paket kaldırılsın mı? Başka bir paket buna bağımlıysa pacman işlemi durdurur.",
-        "Remove this package? Pacman will stop if another package requires it.",
-        "Supprimer ce paquet ? Pacman s’arrêtera si un autre paquet en dépend.",
-        "Dieses Paket entfernen? Pacman bricht ab, wenn ein anderes Paket davon abhängt."),
-    "remove_rule": (
-        "Yalnızca doğrudan yüklenen, koruma dışındaki paketler kaldırılabilir.",
-        "Only explicitly installed, unprotected packages can be removed.",
-        "Seuls les paquets installés explicitement et non protégés peuvent être supprimés.",
-        "Nur explizit installierte, ungeschützte Pakete können entfernt werden."),
-    "removed": ("Paket kaldırıldı.", "Package removed.", "Paquet supprimé.", "Paket entfernt."),
-    "error": ("İşlem tamamlanamadı.", "Operation failed.", "L’opération a échoué.", "Vorgang fehlgeschlagen."),
-}
-
-
-def word(key, language):
-    return WORDS[key][LANGUAGES.index(language)]
-
-
-def command(*args):
-    return subprocess.run(
-        args, capture_output=True, text=True, errors="replace",
-        timeout=5, check=True, env={**os.environ, "LC_ALL": "C"},
-    ).stdout.strip()
-
-
-def error_text(error):
-    return getattr(error, "stderr", None) or str(error)
-
-
-def read_text(path):
-    try:
-        return path.read_text().strip()
-    except OSError:
-        return ""
-
-
-def fan_speeds():
-    return [
-        (read_text(sensor.parent / "name") or sensor.parent.name,
-         sensor.stem.split("_")[0], speed)
-        for sensor in sorted(Path("/sys/class/hwmon").glob("hwmon*/fan*_input"))
-        if (speed := read_text(sensor)).isdigit()
-    ]
-
-
-def removable(name, explicit):
-    return (
-        name in explicit and name not in PROTECTED
-        and name != "linux" and not name.startswith("linux-")
-    )
-
-
-def power_supplies():
-    batteries = {}
-    adapters = []
-    for supply in sorted(POWER_SUPPLIES.glob("*")):
-        if read_text(supply / "type") == "Battery":
-            batteries[supply.name] = (
-                read_text(supply / "capacity"), read_text(supply / "status"),
-                read_text(supply / "charge_control_end_threshold"),
-            )
-        else:
-            online = read_text(supply / "online")
-            if online in ("0", "1"):
-                adapters.append(online == "1")
-    return batteries, any(adapters) if adapters else None
+word = translator("system")
 
 
 class SystemPanel(QWidget):
     charge_completed = Signal(str)
+    profiles_changed = Signal()
 
     def __init__(self, language):
         super().__init__()
         self.language = language
         self.busy = False
+        self.power_state = None
+        self.query = ReadTask(self)
+        self.query.completed.connect(self.loaded)
         self.charge_process = QProcess(self)
         self.charge_process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self.charge_process.finished.connect(self.charge_finished)
@@ -186,6 +58,9 @@ class SystemPanel(QWidget):
         self.auto_power = QCheckBox()
         self.auto_power.clicked.connect(self.apply_auto_power)
         layout.addWidget(self.auto_power)
+        self.power_status = QLabel()
+        self.power_status.setWordWrap(True)
+        layout.addWidget(self.power_status)
 
         self.battery_details = QLabel()
         self.battery_details.setTextFormat(Qt.TextFormat.PlainText)
@@ -216,12 +91,21 @@ class SystemPanel(QWidget):
         layout.addStretch()
         self.refresh_button.clicked.connect(self.refresh)
         self.apply.clicked.connect(self.apply_power)
-        self.refresh()
+        self.render()
 
     def t(self, key):
         return word(key, self.language)
 
     def refresh(self):
+        if self.query.start(power_snapshot):
+            self.render()
+
+    def loaded(self, state, error):
+        self.power_state = state if error is None else ((), "", None)
+        self.render()
+        self.profiles_changed.emit()
+
+    def render(self):
         self.note.setText(self.t("fan_note"))
         self.power_label.setText(self.t("power"))
         self.apply.setText(self.t("apply"))
@@ -232,22 +116,20 @@ class SystemPanel(QWidget):
         self.settings_button.setText(self.t("power_settings"))
         self.settings_button.setEnabled(settings_command("power") is not None)
         self.refresh_hardware()
-        self.status.clear()
+        profiles, active, automatic = self.power_state or ((), "", None)
         self.power.clear()
-        try:
-            profiles = re.findall(r"(?m)^\s*\*?\s*(power-saver|balanced|performance):", command(POWER, "list"))
-            active = command(POWER, "get")
-        except (OSError, subprocess.SubprocessError):
-            profiles = []
-            active = ""
-        for profile in dict.fromkeys(profiles):
+        for profile in profiles:
             self.power.addItem(self.t(profile), profile)
         self.power.setCurrentIndex(self.power.findData(active))
-        self.power.setEnabled(bool(profiles))
-        self.apply.setEnabled(bool(profiles))
-        self.refresh_auto_power()
-        if not profiles:
-            self.status.setText(self.t("power_off"))
+        ready = not self.query.running
+        self.refresh_button.setEnabled(ready)
+        self.power.setEnabled(ready and bool(profiles))
+        self.apply.setEnabled(ready and bool(profiles))
+        self.auto_power.setEnabled(ready and automatic is not None)
+        self.auto_power.setChecked(automatic is True)
+        key = "loading" if not ready else "power_off" if not profiles else ""
+        self.power_status.setText(self.t(key) if key else "")
+        self.power_status.setVisible(bool(key))
 
     def showEvent(self, event):
         self.telemetry.start()
@@ -368,20 +250,12 @@ class SystemPanel(QWidget):
         if not open_settings("power"):
             self.status.setText(self.t("error"))
 
-    def refresh_auto_power(self):
-        try:
-            result = command(POWER, "query-battery-aware").rpartition(":")[2].strip().casefold()
-        except (OSError, subprocess.SubprocessError):
-            result = ""
-        self.auto_power.setEnabled(result in ("true", "false"))
-        self.auto_power.setChecked(result == "true")
-
     def apply_auto_power(self, enabled):
         try:
             command(POWER, "configure-battery-aware", "--enable" if enabled else "--disable")
         except (OSError, subprocess.SubprocessError) as error:
             self.status.setText(f"{self.t('error')} {error_text(error)}")
-        self.refresh_auto_power()
+        self.refresh()
 
     def apply_power(self):
         profile = self.power.currentData()
@@ -393,4 +267,3 @@ class SystemPanel(QWidget):
             self.status.setText(f"{self.t('error')} {error_text(error)}")
             return
         self.refresh()
-

@@ -32,9 +32,10 @@ To run directly from the source directory:
 /usr/bin/python3 main.py
 ```
 
-Run the application as your normal user. System package operations and
-supported charge limit changes request administrator authorization through
-Polkit. A desktop Polkit authentication agent is required for those prompts.
+Run the application as your normal user. Native package installation opens a
+supported terminal and uses sudo. Native package removal and supported charge
+limit changes request administrator authorization through Polkit. A desktop
+Polkit authentication agent is required for those prompts.
 
 ## Features
 
@@ -49,9 +50,9 @@ Polkit. A desktop Polkit authentication agent is required for those prompts.
 ## How system changes work
 
 - **System packages.** Installing selected pacman packages also refreshes the
-  package databases and upgrades the system. Pacman resolves dependencies and
-  uses its default answers. Removal targets one selected item and is subject to
-  pacman's dependency checks and the app's protection rules.
+  package databases and upgrades the system. Review and confirm the actual
+  transaction in the terminal before installation. Removal targets one selected
+  item and is subject to pacman's dependency checks and the app's protection rules.
 - **Flatpak.** Installation uses an existing enabled Flathub remote. The
   confirmation shows the installation scope. If both user and system remotes
   are available, new installations use the user remote.
@@ -65,7 +66,24 @@ Polkit. A desktop Polkit authentication agent is required for those prompts.
 - **Backups.** Restic is required. Keep the repository password somewhere safe.
   TransferCachyOS does not save it. Backup paths are remembered only when you
   enable that preference. History stores the operation time and result.
-  Backups are started manually.
+  Backups are started manually. **Check repository** verifies the repository
+  structure without reading every stored data block. **Stop** requests a
+  graceful interruption. An interrupted restore may leave files at the
+  destination.
 - **Disk cleanup.** The large-file scan shows up to 100 results. After
   confirmation, the selected file moves to Trash. Disk space is reclaimed
-  when Trash is emptied.
+  when Trash is emptied. Folder scans and update checks can be cancelled.
+
+## Project layout
+
+- `src/transfercachyos/ui/` contains the Qt windows and panels.
+- `src/transfercachyos/services/` contains package, backup, hardware, and desktop integrations.
+- `src/transfercachyos/i18n/` contains the four language catalogs.
+- `packaging/` contains the launcher, desktop entry, privileged helper, and install manifest.
+- `tests/` contains regression tests for package and backup operations.
+
+Run the tests from the project directory:
+
+```bash
+env PYTHONPATH=src QT_QPA_PLATFORM=offscreen /usr/bin/python3 -m unittest discover -s tests -v
+```

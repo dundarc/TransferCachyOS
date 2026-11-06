@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import subprocess
@@ -11,12 +10,16 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from catalog import LANGUAGES
-from desktop_settings import desktop_family, open_settings, settings_command
-from setup_tools import FLATPAK
-from system_tools import (
-    POWER, command, error_text, power_supplies, word,
-)
+from ..i18n import messages, translator
+from ..services.commands import command, error_text, probe
+from ..services.desktop import desktop_family, open_settings, settings_command
+from ..services.flatpak import FLATPAK
+from ..services.power import POWER, power_supplies
+
+from .read_task import ReadTask
+
+text = translator("daily")
+word = translator("system")
 
 GIB = 1024 ** 3
 GIO = "/usr/bin/gio"
@@ -30,79 +33,6 @@ APPS = {
     "Thunderbird": "thunderbird.desktop",
 }
 DEVICES = ("bluetooth", "audio", "display", "network", "printer")
-TEXT = {
-    "today": ("Bugün", "Today", "Aujourd’hui", "Heute"),
-    "overview": ("Bilgisayarın durumu", "Computer status", "État de l’ordinateur", "Computerstatus"),
-    "profile": ("Güç profili", "Power profile", "Profil d’alimentation", "Energieprofil"),
-    "power_management": ("Güç yönetimi", "Power management", "Gestion de l’énergie", "Energieverwaltung"),
-    "quick": ("Hızlı işlemler", "Quick actions", "Actions rapides", "Schnellaktionen"),
-    "storage": ("Disk alanı", "Storage", "Stockage", "Speicher"),
-    "updates": ("Güncellemeler ve favoriler", "Updates and favorites", "Mises à jour et favoris", "Updates und Favoriten"),
-    "laptop": ("Dizüstü", "Laptop", "Portable", "Laptop"),
-    "devices": ("Aygıtlar", "Devices", "Périphériques", "Geräte"),
-    "downloads": ("İndirilenler", "Downloads", "Téléchargements", "Downloads"),
-    "backup": ("Şimdi yedekle", "Back up now", "Sauvegarder maintenant", "Jetzt sichern"),
-    "last": ("Son başarılı yedek", "Last successful backup", "Dernière sauvegarde réussie", "Letzte erfolgreiche Sicherung"),
-    "issue": ("Son yedekleme tamamlanmadı.", "The last backup did not complete.", "La dernière sauvegarde est incomplète.", "Die letzte Sicherung wurde nicht abgeschlossen."),
-    "ready": ("Kayıtlı yedek hedefi erişilebilir.", "Saved backup destination is available.", "La destination enregistrée est accessible.", "Das gespeicherte Sicherungsziel ist erreichbar."),
-    "unavailable": ("Kayıtlı yedek hedefi erişilemiyor.", "Saved backup destination is unavailable.", "La destination enregistrée est inaccessible.", "Das gespeicherte Sicherungsziel ist nicht erreichbar."),
-    "free": ("Sistem diskinde boş alan", "Free space on system disk", "Espace libre sur le disque système", "Freier Speicher auf dem Systemlaufwerk"),
-    "scan": ("Büyük dosyaları bul (>100 MiB)", "Find large files (>100 MiB)", "Rechercher les gros fichiers (>100 Mio)", "Große Dateien suchen (>100 MiB)"),
-    "scanning": ("Klasör taranıyor…", "Scanning folder…", "Analyse du dossier…", "Ordner wird durchsucht…"),
-    "partial_scan": ("Tarama tamamlanamadı. Liste kısmi olabilir.", "Scan incomplete. Results may be partial.", "Analyse incomplète. Les résultats peuvent être partiels.", "Suche unvollständig. Die Liste kann unvollständig sein."),
-    "trash": ("Çöp Kutusu", "Trash", "Corbeille", "Papierkorb"),
-    "move_trash": ("Seçilen dosyayı Çöp Kutusu’na taşı", "Move selected file to Trash", "Mettre le fichier sélectionné à la corbeille", "Ausgewählte Datei in den Papierkorb verschieben"),
-    "trash_confirm": ("Bu dosya Çöp Kutusu’na taşınacak. Alan, Çöp Kutusu boşaltıldığında açılır.",
-                      "This file will move to Trash. Space is reclaimed when Trash is emptied.",
-                      "Ce fichier sera mis à la corbeille. L’espace sera libéré en vidant la corbeille.",
-                      "Die Datei wird in den Papierkorb verschoben. Speicher wird beim Leeren freigegeben."),
-    "cache": ("Paket önbelleğini aç", "Open package cache", "Ouvrir le cache des paquets", "Paketcache öffnen"),
-    "check": ("Güncellemeleri kontrol et", "Check for updates", "Rechercher des mises à jour", "Auf Updates prüfen"),
-    "checking": ("Güncellemeler kontrol ediliyor…", "Checking for updates…", "Recherche de mises à jour…", "Updates werden gesucht…"),
-    "system_updates": ("Sistem paketleri", "System packages", "Paquets système", "Systempakete"),
-    "user_flatpak": ("Flatpak • Kullanıcı", "Flatpak • User", "Flatpak • Utilisateur", "Flatpak • Benutzer"),
-    "system_flatpak": ("Flatpak • Sistem", "Flatpak • System", "Flatpak • Système", "Flatpak • System"),
-    "none": ("Güncelleme bulunmadı.", "No updates found.", "Aucune mise à jour trouvée.", "Keine Updates gefunden."),
-    "favorites": ("Favoriler", "Favorites", "Favoris", "Favoriten"),
-    "choose": ("Favori seç", "Choose favorite", "Choisir un favori", "Favorit auswählen"),
-    "launch": ("Aç", "Open", "Ouvrir", "Öffnen"),
-    "battery": ("Pilde", "On battery", "Sur batterie", "Im Akkubetrieb"),
-    "plugged": ("Prizde", "Plugged in", "Sur secteur", "Am Netz"),
-    "auto": ("Açılışta ve güç kaynağı değiştiğinde profili uygula",
-             "Apply profiles at startup and on power-source changes",
-             "Appliquer les profils au démarrage et au changement de source",
-             "Profile beim Start und beim Wechsel der Stromquelle anwenden"),
-    "auto_note": ("Bu seçenek için Sistem sekmesindeki güç hizmetinin otomatik uyarlamasını kapat.",
-                  "For this option, turn off the power service’s automatic adaptation in the System tab.",
-                  "Pour cette option, désactivez l’adaptation automatique du service dans l’onglet Système.",
-                  "Deaktiviere dafür die automatische Anpassung des Energiedienstes im Reiter System."),
-    "save": ("Kaydet", "Save", "Enregistrer", "Speichern"),
-    "saved": ("Tercihler kaydedildi.", "Preferences saved.", "Préférences enregistrées.", "Einstellungen gespeichert."),
-    "travel": ("Seyahat için 8 saat tam şarj", "Allow full charge for 8 hours", "Autoriser la charge complète pendant 8 h", "8 Stunden volle Ladung erlauben"),
-    "travel_note": ("Desteklenen ASUS pilde eski sınır aynı açılış oturumunda 8 saat sonra geri yüklenir.",
-                    "On a supported ASUS battery, the previous limit is restored after 8 hours in the same boot.",
-                    "Sur une batterie ASUS compatible, la limite précédente revient après 8 h sans redémarrage.",
-                    "Bei unterstützten ASUS-Akkus gilt nach 8 Stunden ohne Neustart wieder die vorherige Grenze."),
-    "bluetooth": ("Bluetooth", "Bluetooth", "Bluetooth", "Bluetooth"),
-    "audio": ("Ses ve mikrofon", "Sound and microphone", "Son et microphone", "Ton und Mikrofon"),
-    "display": ("Harici ekran", "External display", "Écran externe", "Externer Bildschirm"),
-    "network": ("Ağ bağlantıları", "Network connections", "Connexions réseau", "Netzwerkverbindungen"),
-    "printer": ("Yazıcı", "Printer", "Imprimante", "Drucker"),
-    "device_module_missing": ("Bu ayar için uygun bir araç bulunamadı.",
-                              "No suitable tool for this setting was found.",
-                              "Aucun outil adapté à ce réglage n’a été trouvé.",
-                              "Für diese Einstellung wurde kein passendes Werkzeug gefunden."),
-    "printer_module_missing": ("Yazıcı ayarlarını açmak için print-manager paketi gerekiyor.",
-                               "Install the print-manager package to open printer settings.",
-                               "Le paquet print-manager est nécessaire pour ouvrir les réglages d’impression.",
-                               "Für die Druckereinstellungen wird das Paket print-manager benötigt."),
-    "audio_out": ("Etkin ses çıkışı", "Active audio output", "Sortie audio active", "Aktive Audioausgabe"),
-    "audio_in": ("Etkin mikrofon", "Active microphone", "Microphone actif", "Aktives Mikrofon"),
-}
-
-
-def text(key, language):
-    return TEXT[key][LANGUAGES.index(language)]
 
 
 def desktop_path(name):
@@ -121,6 +51,13 @@ def ask(parent, title, details, action, cancel):
     return dialog.clickedButton() is confirm
 
 
+def audio_devices():
+    return (
+        probe("/usr/bin/pactl", "get-default-sink"),
+        probe("/usr/bin/pactl", "get-default-source"),
+    )
+
+
 class DailyPanel(QWidget):
     def __init__(self, language, system, backup, flatpak, show_backup, show_system):
         super().__init__()
@@ -134,6 +71,10 @@ class DailyPanel(QWidget):
         self.jobs = []
         self.job = None
         self.busy = False
+        self.cancelled = False
+        self.audio_query = ReadTask(self)
+        self.audio_query.completed.connect(self.audio_loaded)
+        self.audio_state = None
         self.worker = QProcess(self)
         self.worker.finished.connect(self.finished)
         self.worker.errorOccurred.connect(self.process_error)
@@ -202,6 +143,8 @@ class DailyPanel(QWidget):
         disk.addWidget(self.files, 1)
         row = QHBoxLayout()
         self.scan_button = self.button(row, "scan", self.scan)
+        self.cancel_scan = self.button(row, "cancel", self.cancel_jobs, system_word=True)
+        self.cancel_scan.hide()
         self.trash_button = self.button(row, "move_trash", self.trash)
         self.files.currentRowChanged.connect(self.update_trash)
         disk.addLayout(row)
@@ -212,7 +155,11 @@ class DailyPanel(QWidget):
         self.update_trash()
 
         updates = self.page("updates")
-        self.update_button = self.button(updates, "check", self.check_updates)
+        update_actions = QHBoxLayout()
+        self.update_button = self.button(update_actions, "check", self.check_updates)
+        self.cancel_updates = self.button(update_actions, "cancel", self.cancel_jobs, system_word=True)
+        self.cancel_updates.hide()
+        updates.addLayout(update_actions)
         self.update_results = QPlainTextEdit()
         self.update_results.setReadOnly(True)
         updates.addWidget(self.update_results, 1)
@@ -300,7 +247,7 @@ class DailyPanel(QWidget):
         self.heading.setText(self.t("today"))
         self.profile.setAccessibleName(self.t("profile"))
         for button, key, system_word in self.labels:
-            button.setText(word(key, self.language) if system_word else self.t(key) if key in TEXT else key)
+            button.setText(word(key, self.language) if system_word else self.t(key) if key in messages("en")["daily"] else key)
         self.battery_label.setText(self.t("battery"))
         self.plugged_label.setText(self.t("plugged"))
         self.automatic.setText(self.t("auto"))
@@ -310,6 +257,7 @@ class DailyPanel(QWidget):
             check.setEnabled(bool(desktop_path(entry)))
         self.load_favorites()
         self.load_profiles()
+        self.render_audio()
         self.tick()
 
     def tick(self):
@@ -494,6 +442,7 @@ class DailyPanel(QWidget):
 
     def start_jobs(self, jobs):
         self.jobs = list(jobs)
+        self.cancelled = False
         self.busy = True
         self.scan_button.setEnabled(False)
         self.update_button.setEnabled(False)
@@ -503,13 +452,23 @@ class DailyPanel(QWidget):
     def next_job(self):
         if self.jobs:
             self.job, binary, arguments = self.jobs.pop(0)
+            self.cancel_scan.setVisible(self.job == "scan")
+            self.cancel_updates.setVisible(self.job != "scan")
             self.job_timeout.start()
             self.worker.start(binary, arguments)
         else:
             self.busy = False
+            self.cancel_scan.hide()
+            self.cancel_updates.hide()
             self.scan_button.setEnabled(True)
             self.update_button.setEnabled(True)
             self.update_trash()
+
+    def cancel_jobs(self):
+        if self.busy and not self.cancelled:
+            self.cancelled = True
+            self.jobs.clear()
+            self.worker.kill()
 
     def finished(self, code, exit_status):
         stdout = bytes(self.worker.readAllStandardOutput())
@@ -524,6 +483,14 @@ class DailyPanel(QWidget):
 
     def handle_result(self, code, stdout, stderr):
         self.job_timeout.stop()
+        if self.cancelled:
+            if self.job == "scan":
+                self.disk_status.setText(self.t("cancelled"))
+            else:
+                self.update_sections.append(self.t("cancelled"))
+                self.update_results.setPlainText("\n\n".join(self.update_sections))
+            self.next_job()
+            return
         if self.job == "scan":
             self.show_files(stdout)
             self.disk_status.setText(str(self.scan_root) if code == 0 else self.t("partial_scan"))
@@ -536,14 +503,18 @@ class DailyPanel(QWidget):
         self.next_job()
 
     def refresh_audio(self):
-        parts = []
-        for action, key in (("get-default-sink", "audio_out"), ("get-default-source", "audio_in")):
-            try:
-                name = command("/usr/bin/pactl", action)
-            except (OSError, subprocess.SubprocessError):
-                name = "—"
-            parts.append(f"{self.t(key)}: {name}")
-        self.audio.setText("\n".join(parts))
+        self.audio_query.start(audio_devices)
+
+    def audio_loaded(self, devices, error):
+        self.audio_state = devices if error is None else ("", "")
+        self.render_audio()
+
+    def render_audio(self):
+        devices = self.audio_state or ("", "")
+        self.audio.setText("\n".join(
+            f"{self.t(key)}: {name or '—'}"
+            for key, name in zip(("audio_out", "audio_in"), devices)
+        ))
 
     def open_device(self, section):
         if settings_command(section) is None:

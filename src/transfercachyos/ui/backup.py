@@ -1,7 +1,7 @@
 import codecs
 import json
 import os
-import re
+import signal
 from datetime import datetime
 from pathlib import Path
 
@@ -12,220 +12,12 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from catalog import LANGUAGES
+from ..i18n import messages, translator
+from ..services.backup import (
+    RESTIC, backup_identity, backup_plan, repository_fingerprint, restore_destination, snapshot_rows,
+)
 
-RESTIC = "/usr/bin/restic"
-
-TEXT = {
-    "migration": ("Windows’tan geçiş", "Moving from Windows", "Quitter Windows", "Wechsel von Windows"),
-    "backup": ("Yedekleme", "Backup", "Sauvegarde", "Datensicherung"),
-    "intro": ("Windows’ta yaptığın işe göre CachyOS’ta nereden başlayacağını bul.",
-              "Find where to start on CachyOS based on what you did on Windows.",
-              "Trouvez vos repères sur CachyOS selon vos usages sous Windows.",
-              "Finde je nach bisheriger Aufgabe den passenden Einstieg in CachyOS."),
-    "office": ("Office dosyaları → LibreOffice veya ONLYOFFICE",
-               "Office files → LibreOffice or ONLYOFFICE",
-               "Fichiers Office → LibreOffice ou ONLYOFFICE",
-               "Office-Dateien → LibreOffice oder ONLYOFFICE"),
-    "office_note": ("Önemli belgelerin görünümünü ve Excel makrolarını geçişten önce kontrol et.",
-                    "Check the layout of important documents and test Excel macros before switching.",
-                    "Vérifiez la mise en page des documents importants et testez les macros Excel avant la migration.",
-                    "Prüfe das Layout wichtiger Dokumente und teste Excel-Makros vor dem Wechsel."),
-    "desktop": ("Dosya Gezgini, ZIP ve ekran alıntısı → Dolphin, Ark ve Spectacle",
-                "File Explorer, ZIP and Snipping Tool → Dolphin, Ark and Spectacle",
-                "Explorateur, ZIP et capture d’écran → Dolphin, Ark et Spectacle",
-                "Datei-Explorer, ZIP und Snipping Tool → Dolphin, Ark und Spectacle"),
-    "desktop_note": ("Bu araçları KDE uygulama menüsünde adlarıyla ara.",
-                     "Search for these tools by name in the KDE application menu.",
-                     "Recherchez ces outils par leur nom dans le menu KDE.",
-                     "Suche diese Werkzeuge im KDE-Anwendungsmenü nach Namen."),
-    "onedrive": ("OneDrive → Önce dosyalarının nerede olduğunu kontrol et",
-                 "OneDrive → Check where your files are stored",
-                 "OneDrive → Vérifiez où sont stockés vos fichiers",
-                 "OneDrive → Prüfe, wo deine Dateien gespeichert sind"),
-    "onedrive_note": ("Windows’ta yalnızca çevrimiçi duran dosyaları yerel bir yedeğe dahil etmeden önce indir.",
-                      "Download online-only files on Windows before including them in a local backup.",
-                      "Téléchargez les fichiers uniquement en ligne sous Windows avant de les sauvegarder localement.",
-                      "Lade unter Windows reine Onlinedateien vor einer lokalen Sicherung herunter."),
-    "transfer": ("Dosya aktarımı → Harici disk veya LocalSend",
-                 "File transfer → External drive or LocalSend",
-                 "Transfert de fichiers → Disque externe ou LocalSend",
-                 "Dateiübertragung → Externes Laufwerk oder LocalSend"),
-    "transfer_note": ("LocalSend ile aynı ağdaki cihazlardan dosya gönder. Aktarımdan sonra önemli dosyaları açıp kontrol et.",
-                      "Use LocalSend to send files over the same network. Open important files after transferring them.",
-                      "Utilisez LocalSend sur le même réseau. Ouvrez les fichiers importants après le transfert.",
-                      "Übertrage Dateien im selben Netzwerk mit LocalSend. Öffne wichtige Dateien nach der Übertragung."),
-    "apps": ("Uygulamaları göster", "Show apps", "Afficher les applications", "Anwendungen anzeigen"),
-    "backup_intro": ("Kaynak klasörleri ve yedek için ayrı bir hedef seç. Harici diskte özel bir klasör kullanabilirsin.",
-                     "Choose source folders and a separate backup destination. You can use a dedicated folder on an external drive.",
-                     "Choisissez les dossiers source et une destination distincte. Un dossier dédié sur un disque externe convient.",
-                     "Wähle Quellordner und ein getrenntes Sicherungsziel, etwa einen eigenen Ordner auf einem externen Laufwerk."),
-    "add": ("Kaynak klasör ekle", "Add source folder", "Ajouter un dossier source", "Quellordner hinzufügen"),
-    "remove": ("Seçimi çıkar", "Remove selection", "Retirer la sélection", "Auswahl entfernen"),
-    "target": ("Yedek hedefi seç", "Choose backup destination", "Choisir la destination", "Sicherungsziel wählen"),
-    "password": ("Yedek parolası", "Backup password", "Mot de passe de sauvegarde", "Sicherungspasswort"),
-    "repeat": ("Parolayı tekrar yaz", "Repeat password", "Confirmer le mot de passe", "Passwort wiederholen"),
-    "preview": ("Yedekleme planı", "Backup plan", "Plan de sauvegarde", "Sicherungsplan"),
-    "new_backup": ("Yeni yedek", "New backup", "Nouvelle sauvegarde", "Neue Sicherung"),
-    "start": ("Yedekle", "Back up", "Sauvegarder", "Sichern"),
-    "cancel": ("Vazgeç", "Cancel", "Annuler", "Abbrechen"),
-    "missing": ("Restic gerekli. Uygulamalar sekmesinden kurabilirsin.",
-                "Restic is required. You can install it from the Apps tab.",
-                "Restic est nécessaire. Installez-le depuis l’onglet Applications.",
-                "Restic wird benötigt. Installiere es über den Reiter Anwendungen."),
-    "invalid": ("Var olan kaynak ve hedef klasörleri seç. Hedef, bir kaynakla aynı ya da iç içe olamaz.",
-                "Choose existing source and destination folders. They must not overlap.",
-                "Choisissez des dossiers source et une destination existants et distincts.",
-                "Wähle vorhandene Quell- und Zielordner, die sich nicht überschneiden."),
-    "target_error": ("Hedef boş bir klasör veya mevcut bir Restic deposu olmalı.",
-                     "The destination must be an empty folder or an existing Restic repository.",
-                     "La destination doit être vide ou contenir un dépôt Restic existant.",
-                     "Das Ziel muss leer sein oder ein vorhandenes Restic-Repository enthalten."),
-    "bad_password": ("Parolayı gir. Yeni depo için iki parola aynı olmalı.",
-                     "Enter the password. Both entries must match for a new repository.",
-                     "Saisissez le mot de passe. Les deux saisies doivent correspondre pour un nouveau dépôt.",
-                     "Gib das Passwort ein. Für ein neues Repository müssen beide Eingaben übereinstimmen."),
-    "new": ("Yeni şifreli depo oluşturulacak. Parolanı sakla. Parola olmadan yedek açılamaz.",
-            "A new encrypted repository will be created. Keep the password. It is required to access the backup.",
-            "Un nouveau dépôt chiffré sera créé. Conservez le mot de passe pour accéder à la sauvegarde.",
-            "Ein neues verschlüsseltes Repository wird erstellt. Bewahre das Passwort für den Zugriff auf."),
-    "existing": ("Mevcut depoya yeni bir yedek eklenecek.",
-                 "A new backup will be added to the existing repository.",
-                 "Une nouvelle sauvegarde sera ajoutée au dépôt existant.",
-                 "Eine neue Sicherung wird dem vorhandenen Repository hinzugefügt."),
-    "running": ("Yedekleme çalışıyor…", "Backup in progress…", "Sauvegarde en cours…", "Sicherung läuft…"),
-    "done": ("Yedek tamamlandı.", "Backup complete.", "Sauvegarde terminée.", "Sicherung abgeschlossen."),
-    "partial": ("Yedek eksik. Bazı dosyalar okunamadı. Ayrıntıları incele.",
-                "Backup incomplete. Some files could not be read. Review the log.",
-                "Sauvegarde incomplète. Certains fichiers sont illisibles. Consultez le journal.",
-                "Sicherung unvollständig. Einige Dateien konnten nicht gelesen werden. Prüfe das Protokoll."),
-    "snapshots": ("Depodaki yedekler", "Repository snapshots", "Instantanés du dépôt", "Sicherungen im Repository"),
-    "list": ("Yedekleri listele", "List backups", "Lister les sauvegardes", "Sicherungen anzeigen"),
-    "list_running": ("Yedekler okunuyor…", "Reading backups…", "Lecture des sauvegardes…", "Sicherungen werden gelesen…"),
-    "list_empty": ("Depoda yedek yok.", "The repository has no backups.", "Le dépôt ne contient aucune sauvegarde.", "Das Repository enthält keine Sicherungen."),
-    "list_ready": ("Yedekler listelendi. Geri yüklemek için bir yedek seç ve parolanı gir.",
-                   "Backups listed. Select one and enter your password to restore it.",
-                   "Sauvegardes listées. Sélectionnez-en une et saisissez votre mot de passe pour la restaurer.",
-                   "Sicherungen aufgelistet. Wähle eine aus und gib das Passwort zur Wiederherstellung ein."),
-    "restore": ("Geri yükle", "Restore", "Restaurer", "Wiederherstellen"),
-    "restore_target": ("Boş geri yükleme klasörünü seç", "Choose an empty restore folder",
-                       "Choisir un dossier de restauration vide", "Leeren Wiederherstellungsordner wählen"),
-    "restore_invalid": ("Geri yükleme için depodan ayrı, var olan ve boş bir klasör seç.",
-                        "Choose an existing empty folder separate from the repository.",
-                        "Choisissez un dossier existant, vide et distinct du dépôt.",
-                        "Wähle einen vorhandenen leeren Ordner außerhalb des Repositorys."),
-    "restore_plan": ("Seçilen yedekteki tüm dosyalar bu boş klasöre çıkarılacak.",
-                     "All files in the selected backup will be restored to this empty folder.",
-                     "Tous les fichiers de la sauvegarde sélectionnée seront restaurés dans ce dossier vide.",
-                     "Alle Dateien der gewählten Sicherung werden in diesen leeren Ordner wiederhergestellt."),
-    "restore_running": ("Dosyalar geri yükleniyor…", "Restoring files…", "Restauration des fichiers…", "Dateien werden wiederhergestellt…"),
-    "restore_done": ("Dosyalar geri yüklendi.", "Files restored.", "Fichiers restaurés.", "Dateien wiederhergestellt."),
-    "restore_failed": ("Geri yükleme tamamlanamadı. Hedefte kısmi dosyalar kalmış olabilir.",
-                       "Restore did not complete. The destination may contain partially restored files.",
-                       "La restauration a échoué. Des fichiers partiels peuvent subsister dans le dossier cible.",
-                       "Wiederherstellung fehlgeschlagen. Im Ziel können teilweise wiederhergestellte Dateien liegen."),
-    "password_required": ("Depo parolasını gir.", "Enter the repository password.", "Saisissez le mot de passe du dépôt.", "Gib das Repository-Passwort ein."),
-    "remember": ("Kaynakları ve yedek hedefini hatırla",
-                 "Remember source folders and backup destination",
-                 "Mémoriser les sources et la destination de sauvegarde",
-                 "Quellordner und Sicherungsziel merken"),
-    "history": ("Yedekleme geçmişi", "Backup history", "Historique des sauvegardes", "Sicherungsverlauf"),
-    "history_empty": ("Kayıtlı işlem yok.", "No recorded operations.", "Aucune opération enregistrée.", "Keine Vorgänge aufgezeichnet."),
-    "close": ("Kapat", "Close", "Fermer", "Schließen"),
-    "failed": ("İşlem tamamlanamadı. Ayrıntıları incele.", "Operation failed. Review the log.",
-               "L’opération a échoué. Consultez le journal.", "Vorgang fehlgeschlagen. Prüfe das Protokoll."),
-}
-
-
-def text(key, language):
-    return TEXT[key][LANGUAGES.index(language)]
-
-
-def backup_plan(sources, destination):
-    try:
-        paths = tuple(dict.fromkeys(Path(source).resolve(strict=True) for source in sources))
-        target = Path(destination).resolve(strict=True)
-        if not paths or not target.is_dir() or not all(path.is_dir() for path in paths):
-            raise ValueError("invalid")
-        if any(target.is_relative_to(path) or path.is_relative_to(target) for path in paths):
-            raise ValueError("invalid")
-        if (target / "config").is_file():
-            return paths, target, False
-        if not any(target.iterdir()):
-            return paths, target, True
-    except (OSError, RuntimeError) as error:
-        raise ValueError("invalid") from error
-    raise ValueError("target_error")
-
-
-def restore_destination(path, repository):
-    try:
-        destination = Path(path).resolve(strict=True)
-        if (
-            destination.is_dir()
-            and not destination.is_relative_to(repository)
-            and not repository.is_relative_to(destination)
-            and not any(destination.iterdir())
-        ):
-            return destination
-    except (OSError, RuntimeError):
-        pass
-    raise ValueError("restore_invalid")
-
-
-def snapshot_rows(payload):
-    snapshots = json.loads(payload)
-    if not isinstance(snapshots, list):
-        raise ValueError("Invalid snapshot list")
-    rows = []
-    for snapshot in snapshots:
-        ref = snapshot["id"]
-        if not re.fullmatch(r"[0-9a-f]{64}", ref):
-            raise ValueError("Invalid snapshot ID")
-        timestamp = datetime.fromisoformat(snapshot["time"]).astimezone()
-        paths = ", ".join(snapshot["paths"])
-        rows.append((timestamp, ref, paths))
-    return sorted(rows, reverse=True)
-
-
-class MigrationPanel(QWidget):
-    def __init__(self, language, show_apps, show_flathub, show_backup):
-        super().__init__()
-        self.language = language
-        layout = QVBoxLayout(self)
-        self.intro = QLabel()
-        self.intro.setWordWrap(True)
-        layout.addWidget(self.intro)
-        self.cards = {}
-        for key in ("office", "desktop", "onedrive", "transfer"):
-            heading, detail = QLabel(), QLabel()
-            font = heading.font()
-            font.setBold(True)
-            heading.setFont(font)
-            heading.setWordWrap(True)
-            detail.setWordWrap(True)
-            layout.addWidget(heading)
-            layout.addWidget(detail)
-            layout.addSpacing(8)
-            self.cards[key] = heading, detail
-        row = QHBoxLayout()
-        self.buttons = {}
-        for label, callback in (("apps", show_apps), ("Flathub", show_flathub), ("backup", show_backup)):
-            button = QPushButton()
-            button.clicked.connect(callback)
-            row.addWidget(button)
-            self.buttons[label] = button
-        layout.addLayout(row)
-        layout.addStretch()
-        self.translate()
-
-    def translate(self):
-        self.intro.setText(text("intro", self.language))
-        for key, (heading, detail) in self.cards.items():
-            heading.setText(text(key, self.language))
-            detail.setText(text(f"{key}_note", self.language))
-        for key, button in self.buttons.items():
-            button.setText(key if key == "Flathub" else text(key, self.language))
+text = translator("backup")
 
 
 class BackupPanel(QWidget):
@@ -233,6 +25,7 @@ class BackupPanel(QWidget):
         super().__init__()
         self.language = language
         self.busy = False
+        self.cancel_requested = False
         self.phase = ""
         self.secret = b""
         self.status_key = ""
@@ -305,7 +98,9 @@ class BackupPanel(QWidget):
         snapshot_actions = QHBoxLayout()
         self.list_button = QPushButton()
         self.restore_button = QPushButton()
+        self.check_button = QPushButton()
         snapshot_actions.addWidget(self.list_button)
+        snapshot_actions.addWidget(self.check_button)
         snapshot_actions.addStretch()
         snapshot_actions.addWidget(self.restore_button)
         restore_layout.addLayout(snapshot_actions)
@@ -317,7 +112,12 @@ class BackupPanel(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.apps = QPushButton()
-        layout.addWidget(self.apps, 0, Qt.AlignmentFlag.AlignLeft)
+        self.stop = QPushButton()
+        action_row = QHBoxLayout()
+        action_row.addWidget(self.apps)
+        action_row.addWidget(self.stop)
+        action_row.addStretch()
+        layout.addLayout(action_row)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(1000)
@@ -333,6 +133,8 @@ class BackupPanel(QWidget):
         self.preview.clicked.connect(self.show_plan)
         self.snapshots.currentRowChanged.connect(self.refresh)
         self.list_button.clicked.connect(self.list_snapshots)
+        self.check_button.clicked.connect(self.check_repository)
+        self.stop.clicked.connect(self.cancel_operation)
         self.restore_button.clicked.connect(self.restore_snapshot)
         self.history_button.clicked.connect(self.show_history)
         self.refresh()
@@ -356,6 +158,10 @@ class BackupPanel(QWidget):
         self.apps.setText(self.t("apps"))
         self.snapshot_label.setText(self.t("snapshots"))
         self.list_button.setText(self.t("list"))
+        self.check_button.setText(self.t("check_repository"))
+        self.stop.setText(self.t("stop"))
+        self.stop.setVisible(self.busy)
+        self.stop.setEnabled(not self.cancel_requested)
         self.restore_button.setText(self.t("restore"))
         self.history_button.setText(self.t("history"))
         self.remember.setText(self.t("remember"))
@@ -363,6 +169,7 @@ class BackupPanel(QWidget):
         repository = self.repository()
         existing = repository is not None
         self.list_button.setEnabled(available and not self.busy and existing)
+        self.check_button.setEnabled(available and not self.busy and existing)
         self.restore_button.setEnabled(available and not self.busy and existing
                                        and self.snapshot_repo == repository
                                        and self.snapshots.currentItem() is not None)
@@ -405,6 +212,13 @@ class BackupPanel(QWidget):
             sources, target, create = backup_plan(
                 [self.sources.item(i).text() for i in range(self.sources.count())], self.target.text(),
             )
+            identity = backup_identity(sources, target)
+            fingerprint = None if create else repository_fingerprint(target)
+            if not create and fingerprint is None:
+                raise ValueError("target_error")
+        except OSError:
+            self.set_status("invalid")
+            return
         except ValueError as error:
             self.set_status(str(error))
             return
@@ -423,7 +237,20 @@ class BackupPanel(QWidget):
         dialog.exec()
         if dialog.clickedButton() is not approve:
             return
+        try:
+            unchanged = (
+                backup_plan(sources, target) == (sources, target, create)
+                and backup_identity(sources, target) == identity
+                and (create or repository_fingerprint(target) == fingerprint)
+            )
+        except (OSError, ValueError):
+            unchanged = False
+        if not unchanged:
+            self.set_status("backup_changed")
+            return
         self.paths = sources
+        self.confirmed_identity = identity
+        self.confirmed_fingerprint = fingerprint
         self.start_operation(target, secret, "init" if create else "backup", "running")
 
     def repository(self):
@@ -448,6 +275,34 @@ class BackupPanel(QWidget):
         self.snapshots.clear()
         self.snapshot_repo = None
         self.start_operation(repository, secret, "snapshots", "list_running")
+
+    @property
+    def read_only(self):
+        return self.phase in ("snapshots", "check")
+
+    def check_repository(self):
+        repository = self.repository()
+        if self.busy or repository is None:
+            return
+        secret = self.password.text()
+        if not secret or secret != secret.strip():
+            self.set_status("password_required")
+            return
+        self.start_operation(repository, secret, "check", "check_running")
+
+    def cancel_operation(self):
+        if not self.busy or self.cancel_requested:
+            return
+        self.cancel_requested = True
+        self.set_status("stopping")
+        self.interrupt_process()
+
+    def interrupt_process(self):
+        if pid := self.process.processId():
+            try:
+                os.kill(pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
 
     def restore_snapshot(self):
         item = self.snapshots.currentItem()
@@ -493,6 +348,7 @@ class BackupPanel(QWidget):
         self.repeat.clear()
         self.destination = repository
         self.busy = True
+        self.cancel_requested = False
         self.log.clear()
         self.set_status(status)
         self.run(phase)
@@ -513,7 +369,10 @@ class BackupPanel(QWidget):
         self.process.start(RESTIC, arguments)
 
     def send_password(self):
-        self.process.write(self.secret)
+        if self.cancel_requested:
+            self.interrupt_process()
+        else:
+            self.process.write(self.secret)
         self.process.closeWriteChannel()
 
     def read_output(self, final=False):
@@ -537,11 +396,30 @@ class BackupPanel(QWidget):
         self.read_output(final=True)
         self.read_errors(final=True)
         normal = exit_status == QProcess.ExitStatus.NormalExit
+        if self.cancel_requested and not (normal and code == 0):
+            self.complete("restore_cancelled" if self.phase == "restore" else "cancelled")
+            return
+        if self.cancel_requested and self.phase == "init":
+            self.complete("cancelled")
+            return
         if normal and code == 0 and self.phase == "init":
-            self.run("backup")
+            try:
+                self.confirmed_fingerprint = repository_fingerprint(self.destination)
+                unchanged = (
+                    backup_identity(self.paths, self.destination) == self.confirmed_identity
+                    and self.confirmed_fingerprint is not None
+                )
+            except OSError:
+                unchanged = False
+            if unchanged:
+                self.run("backup")
+            else:
+                self.complete("backup_changed")
             return
         if self.phase == "snapshots":
             status = self.finish_snapshot_list() if normal and code == 0 else "failed"
+        elif self.phase == "check":
+            status = "check_done" if normal and code == 0 else "failed"
         elif self.phase == "restore":
             status = "restore_done" if normal and code == 0 else "restore_failed"
         elif normal and code == 0:
@@ -587,22 +465,26 @@ class BackupPanel(QWidget):
         if not recipe:
             return False
         try:
-            _, _, create = backup_plan(*recipe)
-            return not create
-        except ValueError:
+            _, target, create = backup_plan(*recipe)
+            saved = self.settings.value("backup_repository_fingerprint", "", type=str)
+            return not create and bool(saved) and repository_fingerprint(target) == saved
+        except (OSError, ValueError):
             return False
 
     def restore_recipe(self):
-        if self.busy or not self.saved_recipe_ready() or self.sources.count() or self.target.text():
+        recipe = self.saved_recipe()
+        if self.busy or recipe is None or self.sources.count() or self.target.text():
             return
-        sources, destination = self.saved_recipe()
+        sources, destination = recipe
         self.sources.addItems(sources)
-        self.target.setText(destination)
+        if self.saved_recipe_ready():
+            self.target.setText(destination)
         self.refresh()
 
     def remember_toggled(self, enabled):
         if not enabled:
             self.settings.remove("backup_recipe")
+            self.settings.remove("backup_repository_fingerprint")
 
     def history(self):
         try:
@@ -610,7 +492,7 @@ class BackupPanel(QWidget):
             return [
                 entry for entry in entries if isinstance(entry, list) and len(entry) == 3
                 and all(isinstance(value, str) for value in entry)
-                and entry[1] in ("start", "restore") and entry[2] in TEXT
+                and entry[1] in ("start", "restore") and entry[2] in messages("en")["backup"]
             ][:30]
         except (ValueError, TypeError):
             return []
@@ -634,15 +516,22 @@ class BackupPanel(QWidget):
     def process_error(self, error):
         if error == QProcess.ProcessError.FailedToStart:
             self.log.appendPlainText(self.process.errorString())
-            self.complete("failed")
+            self.complete("cancelled" if self.cancel_requested else "failed")
 
     def complete(self, status):
         self.secret = b""
         self.busy = False
+        self.cancel_requested = False
         if self.phase == "backup" and status == "done" and self.remember.isChecked():
-            self.settings.setValue("backup_recipe", json.dumps([
-                list(map(str, self.paths)), str(self.destination),
-            ]))
+            try:
+                fingerprint = repository_fingerprint(self.destination)
+            except OSError:
+                fingerprint = None
+            if fingerprint and fingerprint == self.confirmed_fingerprint:
+                self.settings.setValue("backup_recipe", json.dumps([
+                    list(map(str, self.paths)), str(self.destination),
+                ]))
+                self.settings.setValue("backup_repository_fingerprint", fingerprint)
         if self.phase in ("init", "backup", "restore"):
             action = "restore" if self.phase == "restore" else "start"
             entry = [datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"), action, status]

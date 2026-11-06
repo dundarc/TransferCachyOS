@@ -1,7 +1,4 @@
-import os
 import subprocess
-from dataclasses import dataclass
-from pathlib import Path
 
 from PySide6.QtCore import QProcess, Signal, Qt
 from PySide6.QtGui import QIcon
@@ -10,114 +7,16 @@ from PySide6.QtWidgets import (
     QPushButton, QStyle, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from catalog import APPS, LANGUAGES
-from setup_tools import FLATPAK, SCOPES, read_config
-from system_tools import PACMAN, PKEXEC, PROTECTED, command, error_text, removable, word
+from ..i18n import translator
+from ..services.commands import command, error_text
+from ..services.flatpak import FLATPAK
+from ..services.installed_apps import Entry, installed_inventory, native_entries
+from ..services.packages import PACMAN, PKEXEC, dependency_conflict, removable
 
-APP_DIR = Path("/usr/share/applications")
-APP_NAMES = {app.packages[0]: app.name for app in APPS}
-PREFERRED_LAUNCHERS = {"libreoffice-fresh": "libreoffice-startcenter.desktop",
-                       "libreoffice-still": "libreoffice-startcenter.desktop"}
+from .read_task import ReadTask
 
-TEXT = {
-    "title": ("Yüklü uygulamalar", "Installed apps", "Applications installées", "Installierte Apps"),
-    "name": ("Uygulama", "App", "Application", "Anwendung"),
-    "package": ("Paket", "Package", "Paquet", "Paket"),
-    "version": ("Sürüm", "Version", "Version", "Version"),
-    "source": ("Kaynak", "Source", "Source", "Quelle"),
-    "system": ("Sistem", "System", "Système", "System"),
-    "user": ("Kullanıcı", "User", "Utilisateur", "Benutzer"),
-    "search": ("Uygulama ara", "Search apps", "Rechercher une application", "Apps suchen"),
-    "technical": ("Teknik paketleri göster", "Show technical packages", "Afficher les paquets techniques", "Technische Pakete anzeigen"),
-    "intro": ("Yüklü bir uygulamayı seçerek açabilir veya kaldırabilirsin.",
-              "Select an installed app to open or uninstall it.",
-              "Sélectionnez une application installée pour l’ouvrir ou la désinstaller.",
-              "Wähle eine installierte App zum Öffnen oder Deinstallieren."),
-    "empty": ("Eşleşen uygulama bulunamadı.", "No matching apps.", "Aucune application correspondante.", "Keine passenden Apps gefunden."),
-    "empty_packages": ("Eşleşen paket bulunamadı.", "No matching packages.", "Aucun paquet correspondant.", "Keine passenden Pakete gefunden."),
-    "open": ("Aç", "Open", "Ouvrir", "Öffnen"),
-    "remove": ("Kaldır", "Uninstall", "Désinstaller", "Deinstallieren"),
-    "confirm": ("Bu uygulama kaldırılsın mı?", "Uninstall this app?", "Désinstaller cette application ?", "Diese App deinstallieren?"),
-    "confirm_package": ("Bu paket kaldırılsın mı?", "Remove this package?", "Supprimer ce paquet ?", "Dieses Paket entfernen?"),
-    "blocked": ("Bu öğe bir sistem bileşeni veya bağımlılık olarak yönetiliyor.",
-                "This item is managed as a system component or dependency.",
-                "Cet élément est géré comme composant système ou dépendance.",
-                "Dieser Eintrag wird als Systemkomponente oder Abhängigkeit verwaltet."),
-    "required": ("Başka paketler bu öğeyi kullanıyor. Kaldırma yapılamadı.",
-                 "Other packages require this item. It could not be removed.",
-                 "D’autres paquets utilisent cet élément. Sa suppression a échoué.",
-                 "Andere Pakete benötigen diesen Eintrag. Er konnte nicht entfernt werden."),
-}
-
-
-def text(key, language):
-    return TEXT[key][LANGUAGES.index(language)]
-
-
-@dataclass(frozen=True)
-class Entry:
-    package: str
-    version: str
-    name: str
-    launcher: str = ""
-    icon: str = ""
-    scope: str = ""
-
-
-def desktop_entry(path, desktops, language):
-    config = read_config(path)
-    if not config.has_section("Desktop Entry"):
-        return None
-    data = config["Desktop Entry"]
-    if data.get("Type") != "Application" or not data.get("Exec"):
-        return None
-    if any(data.get(key, "").casefold() in ("true", "1") for key in ("Hidden", "NoDisplay")):
-        return None
-    allowed = set(data.get("OnlyShowIn", "").casefold().split(";")) - {""}
-    excluded = set(data.get("NotShowIn", "").casefold().split(";")) - {""}
-    if (allowed and not allowed.intersection(desktops)) or excluded.intersection(desktops):
-        return None
-    name = data.get(f"Name[{language}]", data.get("Name", "")).strip()
-    if name:
-        return name, data.get("Icon", "")
-
-
-def native_entries(versions, explicit, listing, language):
-    desktops = set(os.environ.get("XDG_CURRENT_DESKTOP", "").casefold().split(":"))
-    grouped = {}
-    for line in listing.splitlines():
-        package, _, filename = line.partition(" ")
-        if package not in versions or package not in explicit or package in PROTECTED or not filename.endswith(".desktop"):
-            continue
-        path = Path(filename)
-        if path.parent != APP_DIR:
-            continue
-        details = desktop_entry(path, desktops, language)
-        if details is None:
-            continue
-        name, icon = details
-        rank = (path.name != PREFERRED_LAUNCHERS.get(package),
-                path.stem.casefold().split(".")[-1] != package.casefold(),
-                name.casefold())
-        entry = Entry(package, versions[package], APP_NAMES.get(package, name), str(path), icon)
-        if package not in grouped or rank < grouped[package][0]:
-            grouped[package] = rank, entry
-    return [entry for _, entry in grouped.values()]
-
-
-def flatpak_entries():
-    apps = []
-    for scope in SCOPES:
-        try:
-            output = command(FLATPAK, "list", f"--{scope}", "--app", "--columns=application,name,version")
-        except (OSError, subprocess.SubprocessError):
-            continue
-        for line in output.splitlines():
-            app_id, _, rest = line.partition("\t")
-            name, _, version = rest.partition("\t")
-            if app_id:
-                apps.append(Entry(app_id, version, name or app_id, icon=app_id, scope=scope))
-    return apps
+text = translator("installed")
+word = translator("system")
 
 
 class PackagePanel(QWidget):
@@ -128,6 +27,10 @@ class PackagePanel(QWidget):
         super().__init__()
         self.language = language
         self.busy = False
+        self.query = ReadTask(self)
+        self.query.completed.connect(self.loaded)
+        self.preflight = ReadTask(self)
+        self.preflight.completed.connect(self.checked_removal)
         self.versions = {}
         self.explicit = set()
         self.native_listing = ""
@@ -203,20 +106,17 @@ class PackagePanel(QWidget):
         self.filter()
 
     def reload(self):
-        self.versions = {}
-        self.explicit = set()
-        self.native_listing = ""
-        try:
-            self.versions = dict(line.split(maxsplit=1) for line in command(PACMAN, "-Q").splitlines())
-            self.explicit = set(command(PACMAN, "-Qqe").splitlines())
-            self.native_listing = "\n".join(
-                line for line in command(PACMAN, "-Ql").splitlines()
-                if line.endswith(".desktop") and f" {APP_DIR}/" in line
-            )
-        except (OSError, subprocess.SubprocessError) as error:
+        if self.query.start(installed_inventory):
+            self.refresh_button.setEnabled(False)
+            self.filter()
+
+    def loaded(self, result, error):
+        self.refresh_button.setEnabled(not self.busy)
+        if error is None:
+            self.versions, self.explicit, self.native_listing, self.flatpaks, error = result
+            self.apps = native_entries(self.versions, self.explicit, self.native_listing, self.language)
+        if error is not None:
             self.status.setPlainText(f"{word('error', self.language)}\n{error_text(error)}")
-        self.apps = native_entries(self.versions, self.explicit, self.native_listing, self.language)
-        self.flatpaks = flatpak_entries()
         self.filter()
 
     def filter(self):
@@ -244,7 +144,7 @@ class PackagePanel(QWidget):
             self.list.addTopLevelItem(item)
         self.list.setSortingEnabled(True)
         empty = self.list.topLevelItemCount() == 0
-        self.empty.setText(self.t("empty_packages" if technical else "empty"))
+        self.empty.setText(self.t("loading" if self.query.running else ("empty_packages" if technical else "empty")))
         self.empty.setVisible(empty)
         self.update_actions()
 
@@ -258,7 +158,7 @@ class PackagePanel(QWidget):
     def update_actions(self):
         entry = self.selection()
         self.open.setEnabled(not self.busy and bool(entry and (entry.launcher or entry.scope)))
-        self.remove.setEnabled(not self.busy and self.can_remove(entry))
+        self.remove.setEnabled(not self.busy and not self.query.running and not self.preflight.running and self.can_remove(entry))
         self.remove.setToolTip(self.t("blocked") if entry and not self.can_remove(entry) else "")
 
     def launch(self):
@@ -278,20 +178,34 @@ class PackagePanel(QWidget):
         entry = self.selection()
         if self.busy or not self.can_remove(entry):
             return
+        if self.query.running or self.preflight.running:
+            return
         if entry.scope:
-            program = FLATPAK
-            arguments = ["uninstall", f"--{entry.scope}", "--app", "--assumeyes", entry.package]
+            self.show_removal(entry, FLATPAK, ["uninstall", f"--{entry.scope}", "--app", "--assumeyes", entry.package])
         else:
-            try:
-                plan = command(PACMAN, "-R", "--print", "--print-format", "%n", "--", entry.package)
-            except (OSError, subprocess.SubprocessError) as error:
-                self.status.setPlainText(f"{self.t('required')}\n{error_text(error)}")
-                return
-            if plan != entry.package:
-                self.status.setPlainText(word("error", self.language))
-                return
-            program = PKEXEC
-            arguments = [PACMAN, "-R", "--noconfirm", "--", entry.package]
+            self.pending_removal = entry
+            self.preflight.start(command, PACMAN, "-R", "--print", "--print-format", "%n", "--", entry.package)
+            self.update_actions()
+
+    def checked_removal(self, plan, error):
+        self.update_actions()
+        if not self.isVisible() or not self.isEnabled() or self.selection() != self.pending_removal:
+            return
+        entry = self.pending_removal
+        if isinstance(error, subprocess.TimeoutExpired):
+            key = "timeout"
+        elif error is not None:
+            detail = error_text(error)
+            key = "required" if isinstance(error, subprocess.CalledProcessError) and dependency_conflict(detail) else "query_failed"
+        elif plan != entry.package:
+            key = "query_failed"
+        else:
+            self.show_removal(entry, PKEXEC, [PACMAN, "-R", "--noconfirm", "--", entry.package])
+            return
+        detail = error_text(error) if error is not None else ""
+        self.status.setPlainText(f"{self.t(key)}\n{detail}".strip())
+
+    def show_removal(self, entry, program, arguments):
         dialog = QMessageBox(self)
         dialog.setTextFormat(Qt.TextFormat.PlainText)
         dialog.setWindowTitle(self.t("remove"))
@@ -305,20 +219,29 @@ class PackagePanel(QWidget):
         dialog.setDefaultButton(cancel)
         dialog.exec()
         if dialog.clickedButton() is approve:
+            self.removing = entry
             self.set_busy(True)
             self.status.clear()
             self.process.start(program, arguments)
 
     def set_busy(self, busy):
         self.busy = busy
-        self.refresh_button.setEnabled(not busy)
+        self.refresh_button.setEnabled(not busy and not self.query.running)
         self.update_actions()
         self.busy_changed.emit(busy)
 
     def finished(self, code, exit_status):
         output = bytes(self.process.readAllStandardOutput()).decode(errors="replace").strip()
-        ok = code == 0 and exit_status == QProcess.ExitStatus.NormalExit
-        self.status.setPlainText(f"{word('removed' if ok else 'error', self.language)}\n{output}".strip())
+        normal = exit_status == QProcess.ExitStatus.NormalExit
+        if normal and code == 0:
+            message = word("removed", self.language)
+        elif normal and not self.removing.scope and code == 126:
+            message = self.t("authorization")
+        elif not self.removing.scope and dependency_conflict(output):
+            message = self.t("required")
+        else:
+            message = word("error", self.language)
+        self.status.setPlainText(f"{message}\n{output}".strip())
         self.reload()
         self.packages_changed.emit()
         self.set_busy(False)

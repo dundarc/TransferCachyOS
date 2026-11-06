@@ -1,3 +1,4 @@
+import configparser
 import os
 import shutil
 from pathlib import Path
@@ -96,3 +97,12 @@ def open_settings(section):
         return False
     started, _ = QProcess.startDetached(*target)
     return started
+
+
+def read_config(path):
+    config = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        config.read(path, encoding="utf-8")
+    except (configparser.Error, OSError, UnicodeError):
+        config.clear()
+    return config

@@ -26,29 +26,27 @@ if [[ -z "$stage_dir" ]]; then
     fi
 fi
 
-for file in main.py catalog.py system_tools.py setup_tools.py migration.py daily.py desktop_settings.py installed_apps.py set-charge-limit transfercachyos transfercachyos.desktop; do
-    if [[ ! -f "$source_dir/$file" || ! -r "$source_dir/$file" ]]; then
-        printf 'Kurulum dosyası eksik veya okunamıyor: %s\n' "$file" >&2
+manifest="$source_dir/packaging/install-manifest.txt"
+while read -r mode source destination extra; do
+    if [[ "$mode" != 644 && "$mode" != 755 ]] ||
+       [[ -z "$source" || -z "$destination" || -n "$extra" ||
+          "$source" == /* || "$destination" == /* ||
+          "/$source/" == */../* || "/$destination/" == */../* ]]; then
+        printf '%s\n' 'Kurulum manifesti geçersiz.' >&2
         exit 1
     fi
-done
+    if [[ ! -f "$source_dir/$source" || ! -r "$source_dir/$source" ]]; then
+        printf 'Kurulum dosyası eksik veya okunamıyor: %s\n' "$source" >&2
+        exit 1
+    fi
+done < "$manifest"
 
-app_dir="$stage_dir$prefix/lib/transfercachyos"
-install -Dm644 -- "$source_dir/main.py" "$app_dir/main.py"
-install -Dm644 -- "$source_dir/catalog.py" "$app_dir/catalog.py"
-install -Dm644 -- "$source_dir/system_tools.py" "$app_dir/system_tools.py"
-install -Dm644 -- "$source_dir/setup_tools.py" "$app_dir/setup_tools.py"
-install -Dm644 -- "$source_dir/migration.py" "$app_dir/migration.py"
-install -Dm644 -- "$source_dir/daily.py" "$app_dir/daily.py"
-install -Dm644 -- "$source_dir/desktop_settings.py" "$app_dir/desktop_settings.py"
-install -Dm644 -- "$source_dir/installed_apps.py" "$app_dir/installed_apps.py"
-install -Dm755 -- "$source_dir/set-charge-limit" "$app_dir/set-charge-limit"
-install -Dm755 -- "$source_dir/transfercachyos" "$stage_dir$prefix/bin/transfercachyos"
-install -Dm644 -- "$source_dir/transfercachyos.desktop" \
-    "$stage_dir$prefix/share/applications/transfercachyos.desktop"
+while read -r mode source destination; do
+    install -Dm"$mode" -- "$source_dir/$source" "$stage_dir$prefix/$destination"
+done < "$manifest"
 
 if [[ -n "$stage_dir" ]]; then
     printf 'Kurulum dosyaları hazırlandı: %s%s\n' "$stage_dir" "$prefix"
 else
-    printf '%s\n' 'TransferCachyOS kuruldu. KDE menüsünden veya transfercachyos komutuyla aç.'
+    printf '%s\n' 'TransferCachyOS kuruldu. uygulama menüsünden veya transfercachyos komutuyla aç.'
 fi
